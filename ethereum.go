@@ -56,10 +56,9 @@ func GetBalance() (string, error) {
 	log.Println("Fetching balance...")
 
 	ctx := context.Background()
-	url := os.Getenv("RPC_URL")
 	address := common.HexToAddress(os.Getenv("ADDRESS"))
 
-	client, err := ethclient.DialContext(ctx, url)
+	client, err := getClient(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -77,10 +76,9 @@ func ParseTransactionFromHash(hexHash string) (*types.Transaction, error) {
 	log.Println("Parsing quicktask...")
 
 	ctx := context.Background()
-	url := os.Getenv("RPC_URL")
 	hash := common.HexToHash(hexHash)
 
-	client, err := ethclient.DialContext(ctx, url)
+	client, err := getClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +121,8 @@ func SendPendingTransaction() (string, error) {
 	}
 
 	ctx := context.Background()
-	url := os.Getenv("RPC_URL")
 
-	client, err := ethclient.DialContext(ctx, url)
+	client, err := getClient(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -214,6 +211,11 @@ func doRequest(url string, payload *SimulationPayload) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+func getClient(ctx context.Context) (*ethclient.Client, error) {
+	url := os.Getenv("RPC_URL")
+	return ethclient.DialContext(ctx, url)
 }
 
 func getEndpoint() string {
