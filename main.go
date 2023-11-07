@@ -36,6 +36,7 @@ func handleGetBalance(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 		sendErrorMessage(s, m, err)
+		return
 	}
 
 	formattedBalance := fmt.Sprintf("Account balance: %se", balance)
@@ -55,15 +56,12 @@ func handleQuickTask(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 		sendErrorMessage(s, m, err)
+		return
 	}
 
 	cost := WeiToEther(tx.Cost())
 	confirmMessage := fmt.Sprintf("Transaction will cost approximately %fe. Would you like to proceed? (y/n)", cost)
-
-	_, err = s.ChannelMessageSend(m.ChannelID, confirmMessage)
-	if err != nil {
-		log.Printf("Error: %v", err)
-	}
+	sendMessage(s, m, confirmMessage)
 }
 
 func handleClear() {

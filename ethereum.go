@@ -1,11 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"math/big"
+	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +24,27 @@ import (
 const (
 	CHAIN_ID = 1
 )
+
+type SimulationPayload struct {
+	Save           bool   `json:"save"`
+	SaveIfFails    bool   `json:"save_if_fails"`
+	SimulationType string `json:"simulation_type"`
+	NetworkID      string `json:"network_id"`
+	From           string `json:"from"`
+	To             string `json:"to"`
+	Input          string `json:"input"`
+	Gas            uint64 `json:"gas"`
+	GasPrice       int64  `json:"gas_price"`
+	Value          int64  `json:"value"`
+}
+
+type SimulationResponse struct {
+	Transaction TransactionResponse
+}
+
+type TransactionResponse struct {
+	Status bool
+}
 
 type TransactionCache struct {
 	pending *types.Transaction
@@ -70,6 +98,15 @@ func ParseTransactionFromHash(hexHash string) (*types.Transaction, error) {
 		transactionCache.pending = nil
 	}()
 
+	success, err := simulateTransaction()
+	if err != nil {
+		return nil, err
+	}
+
+	if !success {
+		return nil, errors.New("execution reverted")
+	}
+
 	return tx, nil
 }
 
@@ -118,4 +155,67 @@ func SendPendingTransaction() (string, error) {
 	}
 
 	return signedTx.Hash().Hex(), nil
+}
+
+func simulateTransaction() (bool, error) {
+	log.Println("Simulating transaction...")
+
+	url := getEndpoint()
+	pendingTx := transactionCache.pending
+	payload := &SimulationPayload{
+		Save:           true,
+		SaveIfFails:    false,
+		SimulationType: "full",
+		NetworkID:      strconv.Itoa(CHAIN_ID),
+		From:           os.Getenv("ADDRESS"),
+		To:             pendingTx.To().String(),
+		Input:          "0x" + hex.EncodeToString(pendingTx.Data()),
+		Gas:            pendingTx.Gas(),
+		GasPrice:       pendingTx.GasPrice().Int64(),
+		Value:          pendingTx.Value().Int64(),
+	}
+
+	body, err := doRequest(url, payload)
+	if err != nil {
+		return false, err
+	}
+
+	var simulationResponse SimulationResponse
+	if err = json.Unmarshal(body, &simulationResponse); err != nil {
+		return false, err
+	}
+
+	return simulationResponse.Transaction.Status, nil
+}
+
+func doRequest(url string, payload *SimulationPayload) ([]byte, error) {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-Access-Key", os.Getenv("TENDERLY_ACCESS_TOKEN"))
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
+}
+
+func getEndpoint() string {
+	return fmt.Sprintf("https://api.tenderly.co/api/v1/account/%s/project/%s/simulate", os.Getenv("TENDERLY_USER_NAME"), os.Getenv("TENDERLY_PROJECT_SLUG"))
 }
