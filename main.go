@@ -13,41 +13,46 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type RequestWrapper struct {
+	session *discordgo.Session
+	message *discordgo.MessageCreate
+}
+
 func init() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatal("no .env file found...")
 	}
 }
 
-func sendMessage(s *discordgo.Session, m *discordgo.MessageCreate, msg string) {
-	_, err := s.ChannelMessageSend(m.ChannelID, msg)
+func (r *RequestWrapper) sendMessage(msg string) {
+	_, err := r.session.ChannelMessageSend(r.message.ChannelID, msg)
 	if err != nil {
 		log.Printf("Error: %v", err)
 	}
 }
 
-func sendErrorMessage(s *discordgo.Session, m *discordgo.MessageCreate, err error) {
+func (r *RequestWrapper) sendErrorMessage(err error) {
 	msg := fmt.Sprintf("Error: %v", err)
-	sendMessage(s, m, msg)
+	r.sendMessage(msg)
 }
 
-func handleGetBalance(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (r *RequestWrapper) handleGetBalance() {
 	balance, err := GetBalance()
 	if err != nil {
 		log.Printf("Error: %v", err)
-		sendErrorMessage(s, m, err)
+		r.sendErrorMessage(err)
 		return
 	}
 
 	formattedBalance := fmt.Sprintf("Account balance: %se", balance)
-	sendMessage(s, m, formattedBalance)
+	r.sendMessage(formattedBalance)
 }
 
-func handleQuickTask(s *discordgo.Session, m *discordgo.MessageCreate) {
-	splitMessage := strings.Fields(m.Content)[1:]
+func (r *RequestWrapper) handleQuickTask() {
+	splitMessage := strings.Fields(r.message.Content)[1:]
 	if len(splitMessage) < 1 {
 		errMsg := errors.New("incorrect number of arguments")
-		sendErrorMessage(s, m, errMsg)
+		r.sendErrorMessage(errMsg)
 		return
 	}
 
@@ -55,28 +60,28 @@ func handleQuickTask(s *discordgo.Session, m *discordgo.MessageCreate) {
 	tx, err := ParseTransactionFromHash(txHash)
 	if err != nil {
 		log.Printf("Error: %v", err)
-		sendErrorMessage(s, m, err)
+		r.sendErrorMessage(err)
 		return
 	}
 
 	cost := WeiToEther(tx.Cost())
 	confirmMessage := fmt.Sprintf("Transaction will cost approximately %fe. Would you like to proceed? (y/n)", cost)
-	sendMessage(s, m, confirmMessage)
+	r.sendMessage(confirmMessage)
 }
 
-func handleClear() {
+func (r *RequestWrapper) handleClear() {
 	ClearTransaction()
 }
 
-func handleTransaction(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (r *RequestWrapper) handleTransaction() {
 	hash, err := SendPendingTransaction()
 	if err != nil {
 		log.Printf("Error: %v", err)
-		sendErrorMessage(s, m, err)
+		r.sendErrorMessage(err)
 	}
 
 	msg := fmt.Sprintf("Transaction sent! Check the status here: https://etherscan.io/tx/%s", hash)
-	sendMessage(s, m, msg)
+	r.sendMessage(msg)
 }
 
 func handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -84,22 +89,27 @@ func handleMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	requestWrapper := &RequestWrapper{
+		session: s,
+		message: m,
+	}
+
 	msgContent := strings.ToLower(m.Content)
 
 	if strings.HasPrefix(msgContent, "!balance") {
-		handleGetBalance(s, m)
+		requestWrapper.handleGetBalance()
 	}
 
 	if strings.HasPrefix(msgContent, "!qt") {
-		handleQuickTask(s, m)
+		requestWrapper.handleQuickTask()
 	}
 
 	if msgContent == "n" {
-		handleClear()
+		requestWrapper.handleClear()
 	}
 
 	if msgContent == "y" {
-		handleTransaction(s, m)
+		requestWrapper.handleTransaction()
 	}
 }
 
